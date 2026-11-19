@@ -1,5 +1,7 @@
 # Smart Parking System — Turbo Prolog
 
+YOUTUBE VIDEO LINK - "https://youtu.be/lOFMKw9bStw?si=i9TQKqAZVWxZi0Rs"
+
 A Prolog program that assigns each arriving vehicle the **nearest available parking space that suits its type and requirement**. If nothing fits, it explains why.
 
 **Concepts:** constraint handling, prioritisation, reasoning
