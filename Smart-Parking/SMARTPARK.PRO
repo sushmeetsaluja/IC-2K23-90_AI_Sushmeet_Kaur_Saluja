@@ -1,132 +1,145 @@
+/* SMART PARKING SYSTEM - Turbo Prolog 2.0
+   Constraint handling, prioritisation and reasoning */
+
 domains
-    vehicle = string
-    requirement = string
-    spaceid = string
-    spacetype = string
-    status = string
-    distance = integer
+  ilist   = integer*
+  vehicle = v(symbol, symbol, symbol)      /* id, type, requirement */
+  vlist   = vehicle*
 
 database
-    space(spaceid, spacetype, status, distance)
+  space(symbol, symbol, symbol, integer)   /* id, type, status, distance */
+  parked(symbol, symbol)                   /* vehicle id, space id */
 
 predicates
-    initialize
-    candidate(requirement, spaceid, distance)
-    compatible(vehicle, requirement, spacetype)
-    find_space(vehicle, requirement, spaceid, spacetype, distance)
-    allocate(vehicle, requirement)
-    get_vehicle(vehicle, requirement)
-    run_three_tests
+  suits(symbol, symbol, symbol)
+  candidate(symbol, symbol, symbol, symbol, integer)
+  min_of(ilist, integer)
+  nearest(symbol, symbol, symbol, symbol, integer)
+  park(symbol, symbol, symbol)
+  explain(symbol, symbol)
+  process(vlist, integer)
+  handle(vehicle, integer)
+  show_spaces
+  header
+  menu
+  choice(char)
 
 clauses
+  /* ---------- PARKING SPACES: id, type, status, distance (m) ---------- */
+  space(p1,  regular,    occupied,    5).
+  space(p2,  compact,    available,  10).
+  space(p3,  regular,    available,  15).
+  space(p4,  reserved,   available,   8).
+  space(p5,  accessible, available,   3).
+  space(p6,  accessible, available,  20).
+  space(p7,  ev,         available,  12).
+  space(p8,  large,      available,  30).
+  space(p9,  bike,       available,   2).
+  space(p10, regular,    unavailable, 4).
+  space(p11, regular,    available,  25).
+  space(p12, compact,    available,   6).
 
-% Initialize the 10 parking spaces.
-% The database is populated once when the program starts.
+  /* ---------- MATCHING RULES: vehicle type + requirement -> space type ---------- */
+  suits(_,     accessible, accessible).
+  suits(car,   regular,    regular).
+  suits(car,   compact,    compact).
+  suits(car,   ev,         ev).
+  suits(car,   vip,        reserved).
+  suits(bike,  regular,    bike).
+  suits(truck, regular,    large).
 
-initialize :-
-    assertz(space("P1","compact","occupied",2)),
-    assertz(space("P2","compact","available",4)),
-    assertz(space("P3","regular","available",3)),
-    assertz(space("P4","reserved","available",5)),
-    assertz(space("P5","large","available",7)),
-    assertz(space("P6","accessible","available",2)),
-    assertz(space("P7","regular","occupied",6)),
-    assertz(space("P8","large","available",4)),
-    assertz(space("P9","compact","available",1)),
-    assertz(space("P10","accessible","available",3)).
+  /* ---------- CONSTRAINTS: only available + matching spaces ---------- */
+  candidate(VT, Req, Id, ST, D) :-
+      space(Id, ST, available, D),
+      suits(VT, Req, ST).
 
-% Candidate spaces are listed nearest first for each requirement.
-% Keep these distances consistent with the space/4 facts.
+  /* ---------- NEAREST SPACE ---------- */
+  min_of([X], X) :- !.
+  min_of([H|T], H) :- min_of(T, M), H <= M, !.
+  min_of([_|T], M) :- min_of(T, M).
 
-candidate("regular","P9",1).
-candidate("regular","P3",3).
-candidate("regular","P2",4).
+  nearest(VT, Req, Id, ST, D) :-
+      findall(X, candidate(VT, Req, _, _, X), L),
+      L = [_|_],
+      min_of(L, D),
+      candidate(VT, Req, Id, ST, D), !.
 
-candidate("compact","P9",1).
-candidate("compact","P2",4).
+  /* ---------- ALLOCATION ---------- */
+  park(VId, _, _) :-
+      parked(VId, S), !,
+      write("Vehicle ", VId, " is already parked at ", S), nl.
+  park(VId, VT, Req) :-
+      nearest(VT, Req, Id, ST, D), !,
+      retract(space(Id, ST, available, D)),
+      assertz(space(Id, ST, occupied, D)),
+      assertz(parked(VId, Id)),
+      write("Vehicle      : ", VId, " (", VT, ", ", Req, ")"), nl,
+      write("Allocated    : ", Id), nl,
+      write("Space Type   : ", ST), nl,
+      write("Distance     : ", D, " m"), nl,
+      write("Status       : Successfully Allocated"), nl,
+      write("Reason       : ", Id, " is the nearest available space matching the requirement."), nl, nl.
+  park(VId, VT, Req) :-
+      write("Vehicle      : ", VId, " (", VT, ", ", Req, ")"), nl,
+      write("Status       : NOT Allocated"), nl,
+      explain(VT, Req), nl.
 
-candidate("large","P8",4).
-candidate("large","P5",7).
+  /* ---------- REASONING: why no space ---------- */
+  explain(VT, Req) :-
+      space(_, ST, _, _), suits(VT, Req, ST), !,
+      write("Reason       : All matching spaces are occupied or unavailable."), nl.
+  explain(_, _) :-
+      write("Reason       : No space type matches this vehicle and requirement."), nl.
 
-candidate("accessible","P6",2).
-candidate("accessible","P10",3).
+  /* ---------- PRIORITY QUEUE: accessible first, then others ---------- */
+  process([], _).
+  process([V|T], P) :- handle(V, P), process(T, P).
 
-% Vehicle and parking requirement compatibility.
+  handle(v(Id, VT, accessible), 1) :- !, park(Id, VT, accessible).
+  handle(v(_,_,accessible),2):-!.
+  handle(v(Id, VT, Req),2):-!,park(Id,VT,Req).
+  handle(_, _).
 
-compatible("car","regular","regular").
-compatible("car","regular","compact").
-compatible("bike","regular","regular").
-compatible("bike","regular","compact").
+  /* ---------- DISPLAY ---------- */
+  header :-
+      nl, write("========== SMART PARKING SYSTEM =========="), nl, nl.
 
-compatible("car","compact","compact").
-compatible("bike","compact","compact").
+  show_spaces :-
+      header,
+      write("ID\tTYPE\t\tSTATUS\t\tDIST"), nl,
+      space(Id, T, S, D),
+      write(Id, "\t", T, "\t\t", S, "\t", D), nl,
+      fail.
+  show_spaces.
 
-compatible("suv","large","large").
+  /* ---------- MENU ---------- */
+  menu :-
+      nl, write("1. Park a vehicle"), nl,
+      write("2. Demo: multiple vehicles arriving"), nl,
+      write("3. Show all spaces"), nl,
+      write("0. Exit"), nl,
+      write("Choice: "), readchar(C), write(C), nl,
+      choice(C).
 
-compatible("car","accessible","accessible").
-compatible("bike","accessible","accessible").
-compatible("suv","accessible","accessible").
-
-% Find a space whose current database status is available.
-
-find_space(V,R,S,T,D) :-
-    candidate(R,S,D),
-    space(S,T,"available",D),
-    compatible(V,R,T).
-
-% Successful allocation:
-% remove the available fact and insert an occupied fact.
-% The cut commits to the first suitable candidate (nearest first).
-
-allocate(V,R) :-
-    find_space(V,R,S,T,D),
-    retract(space(S,T,"available",D)),
-    assertz(space(S,T,"occupied",D)),
-    !,
-    nl,
-    write("===== SMART PARKING SYSTEM ====="),nl,
-    write("Vehicle Type: "),write(V),nl,
-    write("Allocated Space: "),write(S),nl,
-    write("Space Type: "),write(T),nl,
-    write("Distance: "),write(D),nl,
-    write("Status: Successfully Allocated"),nl,
-    write("Reason: Space is available and matches the requirement."),nl.
-
-% Failure message if no candidate satisfies all conditions.
-
-allocate(V,R) :-
-    nl,
-    write("===== SMART PARKING SYSTEM ====="),nl,
-    write("Vehicle Type: "),write(V),nl,
-    write("Requirement: "),write(R),nl,
-    write("Status: Allocation Failed"),nl,
-    write("Reason: No suitable available parking space found."),nl.
-
-% Read one vehicle request from the user.
-
-get_vehicle(V,R) :-
-    nl,
-    write("Enter vehicle type (car/bike/suv): "),
-    readln(V),
-    write("Enter requirement (regular/compact/large/accessible): "),
-    readln(R).
-
-% Process three arriving vehicles in the same running session.
-
-run_three_tests :-
-    write("================================"),nl,
-    write("       SMART PARKING SYSTEM     "),nl,
-    write("================================"),nl,
-    write("Enter details for three arriving vehicles."),nl,
-    get_vehicle(V1,R1),
-    allocate(V1,R1),
-    get_vehicle(V2,R2),
-    allocate(V2,R2),
-    get_vehicle(V3,R3),
-    allocate(V3,R3),
-    nl,
-    write("All three vehicle requests processed."),nl.
+  choice('1') :- !,
+      write("Vehicle ID (e.g. car1): "), readln(I),
+      write("Type (car/bike/truck): "), readln(T),
+      write("Requirement (regular/compact/ev/vip/accessible): "), readln(R),
+      header, park(I, T, R), menu.
+  choice('2') :- !,
+      header,
+      write("Accessible vehicles are served first."), nl, nl,
+      Q = [v(car1, car, regular), v(car2, car, accessible),
+           v(bike1, bike, regular), v(car3, car, vip),
+           v(truck1, truck, regular), v(car4, car, ev),
+           v(car5, car, regular), v(car6, car, regular)],
+      process(Q, 1),
+      process(Q, 2),
+      menu.
+  choice('3') :- !, show_spaces, menu.
+  choice('0') :- !.
+  choice(_) :- menu.
 
 goal
-    initialize,
-    run_three_tests.
+  header,
+  menu.
